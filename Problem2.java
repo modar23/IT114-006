@@ -18,9 +18,11 @@ public class Problem2 {
         double total = 0;
         String totalOutput = "";
         //TODO add/edit code here
-       
+        for (double i : arr)
+        total += i;
         //set the double to a string variable
         totalOutput = total+"";
+        //MuhannadDarwish 31431631 1/21/2022 im solving the problem by ass the sum of the array
         //end add/edit section
         System.out.println("Total is " + totalOutput);
         System.out.println("End process");
