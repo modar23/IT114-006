@@ -96,8 +96,24 @@ public class NumberGuesser4 {
         System.out.println("That's right!");
         level++;// level up!
         strikes = 0;
-    }
+        changeDifficultyLevel(Boolean.TRUE);//add Muhannad Darwish 31431631 2/7/2023
 
+    }
+    //add the strikes beggining Muhannad Darwish 31431631 2/7/2023
+    private void changeDifficultyLevel(boolean increase) {
+		if (increase) {
+			if (maxStrikes > 1) {
+				maxStrikes--;
+				System.out.println("Your Diffiulty level has increased now. (Max Strikes = " + maxStrikes + ")");
+			}
+		} else {
+			if (maxStrikes < 5) {
+				maxStrikes++;
+				System.out.println("Your Diffiulty level has decreased now. (Max Strikes = " + maxStrikes + ")");
+			}
+		}
+
+	}//add end Muhannad Darwish 31431631 2/7/2023
     private boolean processCommands(String message) {
         boolean processed = false;
         if (message.equalsIgnoreCase("quit")) {
@@ -113,6 +129,7 @@ public class NumberGuesser4 {
         System.out.println("The correct number was " + number);
         strikes = 0;
         level--;
+        changeDifficultyLevel(Boolean.FALSE);//add for hints Muhannad Darwish 31431631 2/7/2023
         if (level < 1) {
             level = 1;
         }
@@ -127,7 +144,14 @@ public class NumberGuesser4 {
             win();
             pickNewRandom = true;
         } else {
-            System.out.println("That's wrong");
+            //add begin
+            String hint = "";
+			if (guess > number) {
+				hint = "Select lower value";
+			} else if (guess < number) {
+				hint = "Select higher value";
+			} 
+            System.out.println("That's wrong(Hint: " + hint + ")"); //add end Muhannad Darwish 31431631 2/7/2023
             strikes++;
             if (strikes >= maxStrikes) {
                 lose();
