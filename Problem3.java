@@ -21,6 +21,7 @@ public class Problem3 {
         //TODO convert each value to positive
         //set the result to the proper index of the output array
         //hint: don't forget to handle the data types properly
+        //MuhannadDarwish 31431631 1/31/2022 im attempting to turn all the datatypes positive using th esame format 
         for (int i = 0; i < arr.length; i++) {
             if (arr[i] instanceof Integer) {
                 output[i] = Math.abs((Integer) arr[i]);
