@@ -31,6 +31,7 @@ public class Client {
         // Note: these check the client's end of the socket connect; therefore they
         // don't really help determine
         // if the server had a problem
+        //muhannad Darwish 31431631 3/6/23
         return server.isConnected() && !server.isClosed() && !server.isInputShutdown() && !server.isOutputShutdown();
 
     }
@@ -59,7 +60,7 @@ public class Client {
         }
         return isConnected();
     }
-
+//muhannad Darwish 31431631 3/6/23
     /**
      * <p>
      * Check if the string contains the <i>connect</i> command
@@ -97,7 +98,7 @@ public class Client {
         }
         return false;
     }
-
+//muhannad Darwish 31431631 3/6/23
     /**
      * Controller for handling various text commands.
      * <p>
@@ -127,7 +128,7 @@ public class Client {
         }
         return false;
     }
-
+//muhannad Darwish 31431631 3/6/23
     // Send methods
     private void sendConnect() throws IOException {
         Payload p = new Payload();
@@ -143,7 +144,7 @@ public class Client {
         p.setClientName(clientName);
         out.writeObject(p);
     }
-
+//muhannad Darwish 31431631 3/6/23
     // end send methods
     private void listenForKeyboard() {
         inputThread = new Thread() {
@@ -190,7 +191,7 @@ public class Client {
                 try {
                     Payload fromServer;
 
-                    // while we're connected, listen for strings from server
+                    // while we're connected, listen for strings from server Muhnannad Darwish 31431631 mmd23 3/6/23
                     while (!server.isClosed() && !server.isInputShutdown()
                             && (fromServer = (Payload) in.readObject()) != null) {
 
@@ -214,7 +215,7 @@ public class Client {
         };
         fromServerThread.start();// start the thread
     }
-
+//muhannad Darwish 31431631 3/6/23
     private void processMessage(Payload p) {
         switch (p.getPayloadType()) {
             case CONNECT:// for now connect,disconnect are all the same
@@ -282,7 +283,8 @@ public class Client {
         Client client = new Client();
 
         try {
-            // if start is private, it's valid here since this main is part of the class
+            // if start is private, it's valid here since this main is part of the class Muhannad Darwish 31431631 mmd23 3/6/23
+
             client.start();
         } catch (IOException e) {
             e.printStackTrace();

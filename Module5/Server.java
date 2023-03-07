@@ -22,7 +22,7 @@ public class Server {
             System.out.println("Server is listening on port " + port);
             // Reference server statically
             Room.server = this;// all rooms will have the same reference
-            // create a lobby on start
+            // create a lobby on start Muhannad Darwish id:31431631 mmd23 3/6/23
             lobby = new Room("Lobby");
             rooms.add(lobby);
             do {
@@ -51,6 +51,7 @@ public class Server {
      * @param roomName The name of the room to look for
      * @return matched Room or null if not found
      */
+    //Muhannad Darwish id:31431631 mmd23 3/6/23
     private Room getRoom(String roomName) {
         for (int i = 0, l = rooms.size(); i < l; i++) {
             if (rooms.get(i).getName().equalsIgnoreCase(roomName)) {
@@ -68,6 +69,7 @@ public class Server {
      * @param client   The client moving rooms
      * @return true if reassign worked; false if new room doesn't exist
      */
+    //Muhannad Darwish id:31431631 mmd23 3/6/23
     protected synchronized boolean joinRoom(String roomName, ServerThread client) {
         Room newRoom = roomName.equalsIgnoreCase("lobby")?lobby:getRoom(roomName);
         Room oldRoom = client.getCurrentRoom();
@@ -141,6 +143,7 @@ public class Server {
         } catch (Exception e) {
             // can ignore, will either be index out of bounds or type mismatch
             // will default to the defined value prior to the try/catch
+            //Muhannad Darwish ID:31431631
         }
         server.start(port);
         System.out.println("Server Stopped");
