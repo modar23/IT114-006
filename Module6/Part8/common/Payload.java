@@ -22,7 +22,7 @@ public class Payload implements Serializable {
     /**
      * Who the payload is from
      */
-    private String clientName;
+    private String clientName;//who the payload is from, mmd23 31431631 04/05/2023
 
     public String getClientName() {
         return clientName;
@@ -45,7 +45,8 @@ public class Payload implements Serializable {
     /**
      * Generic text based message
      */
-    private String message;
+    private String message;//string containing the message,  mmd23 31631431 04/05/2023
+
 
     public String getMessage() {
         return message;
@@ -58,7 +59,7 @@ public class Payload implements Serializable {
     /**
      * Generic number for example sake
      */
-    private int number;
+    private int number;//example of other possibel data types 
 
     public int getNumber() {
         return number;
@@ -69,7 +70,7 @@ public class Payload implements Serializable {
     }
 
     @Override
-    public String toString() {
+    public String toString() {//To string prints class name and hash but gets overridden
         return String.format("ClientId[%s], ClientName[%s], Type[%s], Number[%s], Message[%s]", getClientId(),
                 getClientName(), getPayloadType().toString(), getNumber(),
                 getMessage());
