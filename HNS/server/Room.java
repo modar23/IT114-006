@@ -3,97 +3,96 @@ package HNS.server;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import HNS.common.Constants;
-
 public class Room implements AutoCloseable {
-    // server is a singleton now so we don't need this
-    // protected static Server server;// used to refer to accessible server
-    // functions
+    private static SocketServer server;// used to refer to accessible server functions
     private String name;
-    private List<ServerThread> clients = new ArrayList<ServerThread>();
-    private boolean isRunning = false;
+    private final static Logger log = Logger.getLogger(Room.class.getName());
+
+    
     // Commands
     private final static String COMMAND_TRIGGER = "/";
     private final static String CREATE_ROOM = "createroom";
     private final static String JOIN_ROOM = "joinroom";
-    private final static String DISCONNECT = "disconnect";
-    private final static String LOGOUT = "logout";
-    private final static String LOGOFF = "logoff";
-    private static Logger logger = Logger.getLogger(Room.class.getName());
+    private final static String ROLL= "roll";
+    private final static String FLIP = "flip";
+    private final static String PM = "@";
+    private final static String MUTE = "mute";
+    private final static String UNMUTE = "unmute";
 
     public Room(String name) {
-        this.name = name;
-        isRunning = true;
+	this.name = name;
+    }
+
+    public static void setServer(SocketServer server) {
+	Room.server = server;
     }
 
     public String getName() {
-        return name;
+	return name;
     }
 
-    public boolean isRunning() {
-        return isRunning;
-    }
+    private List<ServerThread> clients = new ArrayList<ServerThread>();
 
     protected synchronized void addClient(ServerThread client) {
-        if (!isRunning) {
-            return;
-        }
-        client.setCurrentRoom(this);
-        if (clients.indexOf(client) > -1) {
-            logger.warning("Attempting to add client that already exists in room");
-        } else {
-            clients.add(client);
-            client.sendResetUserList();
-            syncCurrentUsers(client);
-            sendConnectionStatus(client, true);
-        }
+	client.setCurrentRoom(this);
+	if (clients.indexOf(client) > -1) {
+	    log.log(Level.INFO, "Attempting to add a client that already exists");
+	}
+	else {
+	    clients.add(client);
+	    if (client.getClientName() != null) {
+		client.sendClearList();
+		sendConnectionStatus(client, true, "joined the room " + getName());
+		updateClientList(client);
+	    }
+	}
+    }
+
+    private void updateClientList(ServerThread client) {
+	Iterator<ServerThread> iter = clients.iterator();
+	while (iter.hasNext()) {
+	    ServerThread c = iter.next();
+	    if (c != client) {
+		boolean messageSent = client.sendConnectionStatus(c.getClientName(), true, null);
+	    }
+	}
     }
 
     protected synchronized void removeClient(ServerThread client) {
-        if (!isRunning) {
-            return;
-        }
-        // attempt to remove client from room
-        try {
-            clients.remove(client);
-        } catch (Exception e) {
-            logger.severe(String.format("Error removing client from room %s", e.getMessage()));
-            e.printStackTrace();
-        }
-        // if there are still clients tell them this person left
-        if (clients.size() > 0) {
-            sendConnectionStatus(client, false);
-        }
-        checkClients();
+	clients.remove(client);
+	if (clients.size() > 0) {
+	    // sendMessage(client, "left the room");
+	    sendConnectionStatus(client, false, "left the room " + getName());
+	}
+	else {
+	    cleanupEmptyRoom();
+	}
     }
 
-    private void syncCurrentUsers(ServerThread client) {
-        Iterator<ServerThread> iter = clients.iterator();
-        while (iter.hasNext()) {
-            ServerThread existingClient = iter.next();
-            if (existingClient.getClientId() == client.getClientId()) {
-                continue;// don't sync ourselves
-            }
-            boolean messageSent = client.sendExistingClient(existingClient.getClientId(),
-                    existingClient.getClientName());
-            if (!messageSent) {
-                handleDisconnect(iter, existingClient);
-                break;// since it's only 1 client receiving all the data, break if any 1 send fails
-            }
-        }
+    private void cleanupEmptyRoom() {
+	// If name is null it's already been closed. And don't close the Lobby
+	if (name == null || name.equalsIgnoreCase(SocketServer.LOBBY)) {
+	    return;
+	}
+	try {
+	    log.log(Level.INFO, "Closing empty room: " + name);
+	    close();
+	}
+	catch (Exception e) {
+	    // TODO Auto-generated catch block
+	    e.printStackTrace();
+	}
     }
 
-    /***
-     * Checks the number of clients.
-     * If zero, begins the cleanup process to dispose of the room
-     */
-    private void checkClients() {
-        // Cleanup if room is empty and not lobby
-        if (!name.equalsIgnoreCase(Constants.LOBBY) && (clients == null || clients.size() == 0)) {
-            close();
-        }
+    protected void joinRoom(String room, ServerThread client) {
+	server.joinRoom(room, client);
+    }
+
+    protected void joinLobby(ServerThread client) {
+	server.joinLobby(client);
     }
 
     /***
@@ -103,76 +102,107 @@ public class Room implements AutoCloseable {
      * @param client  The sender of the message (since they'll be the ones
      *                triggering the actions)
      */
-    @Deprecated // not used in my project as of this lesson, keeping it here in case things
-                // change
     private boolean processCommands(String message, ServerThread client) {
-        boolean wasCommand = false;
-        try {
-            if (message.startsWith(COMMAND_TRIGGER)) {
-                String[] comm = message.split(COMMAND_TRIGGER);
-                String part1 = comm[1];
-                String[] comm2 = part1.split(" ");
-                String command = comm2[0];
-                String roomName;
-                wasCommand = true;
-                switch (command) {
-                    case CREATE_ROOM:
-                        roomName = comm2[1];
-                        Room.createRoom(roomName, client);
-                        break;
-                    case JOIN_ROOM:
-                        roomName = comm2[1];
-                        Room.joinRoom(roomName, client);
-                        break;
-                    case DISCONNECT:
-                    case LOGOUT:
-                    case LOGOFF:
-                        Room.disconnectClient(client, this);
-                        break;
-                    default:
-                        wasCommand = false;
-                        break;
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return wasCommand;
+	boolean wasCommand = false;
+	try {
+	    if (message.indexOf(COMMAND_TRIGGER) > -1) {
+		String[] comm = message.split(COMMAND_TRIGGER);
+		log.log(Level.INFO, message);
+		String part1 = comm[1];
+		String[] comm2 = part1.split(" ");
+		String command = comm2[0];
+		if (command != null) {
+		    command = command.toLowerCase();
+		}
+		String roomName;
+		switch (command) {
+		case CREATE_ROOM:
+		    roomName = comm2[1];
+		    if (server.createNewRoom(roomName)) {
+			joinRoom(roomName, client);
+		    }
+		    wasCommand = true;
+		    break;
+		case JOIN_ROOM:
+		    roomName = comm2[1];
+		    joinRoom(roomName, client);
+		    wasCommand = true;
+		    break;
+		case ROLL:
+			int roll = (int)((Math.random()*(100)));
+			String rollMsg = "<b style=color:orange>rolled a "+Integer.toString(roll)+" (0-100)</b>";
+			sendMessage(client,rollMsg);
+			wasCommand = true;
+			break;
+		case FLIP:
+			int flip = (int)((Math.random()*(2))+1);
+			String flipMsg = "<b style=color:green>got heads on the coin toss</b>";
+			if(flip ==2) {
+				flipMsg = "<b style=color:red>got tails on the coin toss</b>";
+			}
+			sendMessage(client,flipMsg);
+			wasCommand = true;
+			break;
+		case MUTE:
+			String[] splitMsg = message.split(" ");
+			//message should look something like: /mute Bob
+			String mutedClient = splitMsg[1];
+			client.mutedList.add(mutedClient);
+			
+			//sends a message to the muted user and the client that muted them
+			Iterator<ServerThread> iter = clients.iterator();
+			while (iter.hasNext()) {
+				ServerThread c = iter.next();
+				if (c.getClientName().equals(mutedClient)||c.getClientName().equals(client.getClientName())) {
+					c.send(client.getClientName()," <i>muted "+mutedClient+"</i>");
+				}
+			}
+			//sendMessage(client,"<i>muted "+mutedClient+"</i>");
+			wasCommand = true;
+			break;
+		case UNMUTE:
+			String[] splitArr = message.split(" ");
+			String unmutedClient = splitArr[1];
+			for(String name: client.mutedList) {
+				if(name.equals(unmutedClient)) {
+					client.mutedList.remove(unmutedClient);
+					
+					//sends a message to the unmuted user and the client that unmuted them
+					Iterator<ServerThread> iter1 = clients.iterator();
+					while (iter1.hasNext()) {
+						ServerThread c = iter1.next();
+						if (c.getClientName().equals(unmutedClient)||c.getClientName().equals(client.getClientName())) {
+							c.send(client.getClientName()," <i>unmuted "+unmutedClient+"</i>");
+						}
+					}
+					//sendMessage(client,"<i>unmuted "+unmutedClient+"</i>");
+					wasCommand = true;
+					break;
+				}
+			}
+		break;
+		}
+	    }
+	}
+	catch (Exception e) {
+	    e.printStackTrace();
+	}
+	return wasCommand;
     }
 
-    // Command helper methods
-    protected static void getRooms(String query, ServerThread client) {
-        String[] rooms = Server.INSTANCE.getRooms(query).toArray(new String[0]);
-        client.sendRoomsList(rooms,
-                (rooms != null && rooms.length == 0) ? "No rooms found containing your query string" : null);
+    
+    // TODO changed from string to ServerThread
+    protected void sendConnectionStatus(ServerThread client, boolean isConnect, String message) {
+	Iterator<ServerThread> iter = clients.iterator();
+	while (iter.hasNext()) {
+	    ServerThread c = iter.next();
+	    boolean messageSent = c.sendConnectionStatus(client.getClientName(), isConnect, message);
+	    if (!messageSent) {
+		iter.remove();
+		log.log(Level.INFO, "Removed client " + c.getId());
+	    }
+	}
     }
-
-    protected static void createRoom(String roomName, ServerThread client) {
-        if (Server.INSTANCE.createNewRoom(roomName)) {
-            Room.joinRoom(roomName, client);
-        } else {
-            client.sendMessage(Constants.DEFAULT_CLIENT_ID, String.format("Room %s already exists", roomName));
-        }
-    }
-
-    /**
-     * Will cause the client to leave the current room and be moved to the new room
-     * if applicable
-     * 
-     * @param roomName
-     * @param client
-     */
-    protected static void joinRoom(String roomName, ServerThread client) {
-        if (!Server.INSTANCE.joinRoom(roomName, client)) {
-            client.sendMessage(Constants.DEFAULT_CLIENT_ID, String.format("Room %s doesn't exist", roomName));
-        }
-    }
-
-    protected static void disconnectClient(ServerThread client, Room room) {
-        client.disconnect();
-        room.removeClient(client);
-    }
-    // end command helper methods
 
     /***
      * Takes a sender and a message and broadcasts the message to all clients in
@@ -182,50 +212,85 @@ public class Room implements AutoCloseable {
      * @param sender  The client sending the message
      * @param message The message to broadcast inside the room
      */
-    protected synchronized void sendMessage(ServerThread sender, String message) {
-        if (!isRunning) {
-            return;
+    protected void sendMessage(ServerThread sender, String message) {
+	log.log(Level.INFO, getName() + ": Sending message to " + clients.size() + " clients");
+	if (processCommands(message, sender)) {
+	    // it was a command, don't broadcast
+	    return;
+	}
+	if (sendPM(sender, message)){
+		return;
+	}
+	Iterator<ServerThread> iter = clients.iterator();
+	while (iter.hasNext()) {
+		ServerThread client = iter.next();
+		if(!client.isMuted(sender.getClientName())) {
+		    boolean messageSent = client.send(sender.getClientName(), message);
+		    if (!messageSent) {
+			iter.remove();
+			log.log(Level.INFO, "Removed client " + client.getId());
+		    }
+		}
+	}
+    }
+    
+  //sends a private message if a specific user is tagged
+    protected boolean sendPM(ServerThread sender, String message) {
+    	boolean isPM = false;
+    	String receiver = null;
+    	
+    	if (message.indexOf("@") > -1) {
+			String[] words = message.split(" ");
+			for(String word: words){
+			    if (word.charAt(0)=='@'){
+			        receiver = word.substring(1);
+			        isPM = true;
+			        //now that the message is known to be private, we can send it to each receiver
+			        
+			        Iterator<ServerThread> iter = clients.iterator();
+					while (iter.hasNext()) {
+						ServerThread c = iter.next();
+						if (c.getClientName().equals(receiver)&&(!c.isMuted(sender.getClientName()))) {
+							c.send(sender.getClientName(), message);
+						}
+					}
+			    }
+			}
+			//send one message to the sender so they can see it went through
+			sender.send(sender.getClientName(), message);
+		}
+    	//return true boolean
+    	return isPM;
+    }
+    /***
+     * Will attempt to migrate any remaining clients to the Lobby room. Will then
+     * set references to null and should be eligible for garbage collection
+     */
+    public List<String> getRooms() {
+    	return server.getRooms();
         }
-        logger.info(String.format("Sending message to %s clients", clients.size()));
-        if (sender != null && processCommands(message, sender)) {
-            // it was a command, don't broadcast
-            return;
-        }
-        long from = sender == null ? Constants.DEFAULT_CLIENT_ID : sender.getClientId();
-        Iterator<ServerThread> iter = clients.iterator();
-        while (iter.hasNext()) {
-            ServerThread client = iter.next();
-            boolean messageSent = client.sendMessage(from, message);
-            if (!messageSent) {
-                handleDisconnect(iter, client);
-            }
-        }
+    
+    @Override
+    public void close() throws Exception {
+	int clientCount = clients.size();
+	if (clientCount > 0) {
+	    log.log(Level.INFO, "Migrating " + clients.size() + " to Lobby");
+	    Iterator<ServerThread> iter = clients.iterator();
+	    Room lobby = server.getLobby();
+	    while (iter.hasNext()) {
+		ServerThread client = iter.next();
+		lobby.addClient(client);
+		iter.remove();
+	    }
+	    log.log(Level.INFO, "Done Migrating " + clients.size() + " to Lobby");
+	}
+	server.cleanupRoom(this);
+	name = null;
+	// should be eligible for garbage collection now
     }
 
-    protected synchronized void sendConnectionStatus(ServerThread sender, boolean isConnected) {
-        Iterator<ServerThread> iter = clients.iterator();
-        while (iter.hasNext()) {
-            ServerThread receivingClient = iter.next();
-            boolean messageSent = receivingClient.sendConnectionStatus(
-                    sender.getClientId(),
-                    sender.getClientName(),
-                    isConnected);
-            if (!messageSent) {
-                handleDisconnect(iter, receivingClient);
-            }
-        }
-    }
+	public boolean isRunning() {
+		return false;
+	}
 
-    private void handleDisconnect(Iterator<ServerThread> iter, ServerThread client) {
-        iter.remove();
-        logger.info(String.format("Removed client %s", client.getClientName()));
-        sendMessage(null, client.getClientName() + " disconnected");
-        checkClients();
-    }
-
-    public void close() {
-        Server.INSTANCE.removeRoom(this);
-        isRunning = false;
-        clients.clear();
-    }
 }

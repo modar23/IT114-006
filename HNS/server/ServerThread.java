@@ -4,233 +4,319 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.util.Iterator;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import HNS.common.Constants;
-import HNS.common.Payload;
-import HNS.common.PayloadType;
-import HNS.common.RoomResultPayload;
-
-/**
- * A server-side representation of a single client
- */
 public class ServerThread extends Thread {
     private Socket client;
-    private String clientName;
+    private ObjectInputStream in;// from client
+    private ObjectOutputStream out;// to client
     private boolean isRunning = false;
-    private ObjectOutputStream out;// exposed here for send()
-    // private Server server;// ref to our server so we can call methods on it
-    // more easily
-    private Room currentRoom;
-    private static Logger logger = Logger.getLogger(ServerThread.class.getName());
-    private long myClientId;
+    private Room currentRoom;// what room we are in, should be lobby by default
+    private String clientName;
+    private final static Logger log = Logger.getLogger(ServerThread.class.getName());
+    public List<String> mutedList = new ArrayList<String>();
 
-    public void setClientId(long id) {
-        myClientId = id;
+    public boolean isMuted(String clientName) {
+    	for(String name: mutedList) {
+    		if (name.equals(clientName)){
+    			return true;
+    		}
+    	}
+    	return false;
     }
-
-    public long getClientId() {
-        return myClientId;
-    }
-
-    public boolean isRunning() {
-        return isRunning;
-    }
-
-    public ServerThread(Socket myClient, Room room) {
-        logger.info("ServerThread created");
-        // get communication channels to single client
-        this.client = myClient;
-        this.currentRoom = room;
-
-    }
-
-    protected void setClientName(String name) {
-        if (name == null || name.isBlank()) {
-            logger.warning("Invalid name being set");
-            return;
-        }
-        clientName = name;
-    }
-
+    
     public String getClientName() {
-        return clientName;
+	return clientName;
     }
 
     protected synchronized Room getCurrentRoom() {
-        return currentRoom;
+	return currentRoom;
     }
 
     protected synchronized void setCurrentRoom(Room room) {
-        if (room != null) {
-            currentRoom = room;
-        } else {
-            logger.info("Passed in room was null, this shouldn't happen");
-        }
+	if (room != null) {
+	    currentRoom = room;
+	}
+	else {
+	    log.log(Level.INFO, "Passed in room was null, this shouldn't happen");
+	}
     }
 
-    public void disconnect() {
-        sendConnectionStatus(myClientId, getClientName(), false);
-        logger.info("Thread being disconnected by server");
-        isRunning = false;
-        cleanup();
+    public ServerThread(Socket myClient, Room room) throws IOException {
+	this.client = myClient;
+	this.currentRoom = room;
+	out = new ObjectOutputStream(client.getOutputStream());
+	in = new ObjectInputStream(client.getInputStream());
     }
 
-    // send methods
-
-    public boolean sendReadyStatus(long clientId) {
-        Payload p = new Payload();
-        p.setPayloadType(PayloadType.READY);
-        p.setClientId(clientId);
-        return send(p);
+    /***
+     * Sends the message to the client represented by this ServerThread
+     * 
+     * @param message
+     * @return
+     */
+    @Deprecated
+    protected boolean send(String message) {
+	// added a boolean so we can see if the send was successful
+	try {
+	    out.writeObject(message);
+	    return true;
+	}
+	catch (IOException e) {
+	    log.log(Level.INFO, "Error sending message to client (most likely disconnected)");
+	    e.printStackTrace();
+	    cleanup();
+	    return false;
+	}
     }
 
-    public boolean sendRoomName(String name) {
-        Payload p = new Payload();
-        p.setPayloadType(PayloadType.JOIN_ROOM);
-        p.setMessage(name);
-        return send(p);
+    /***
+     * Replacement for send(message) that takes the client name and message and
+     * converts it into a payload
+     * 
+     * @param clientName
+     * @param message
+     * @return
+     */
+    protected boolean send(String clientName, String message) {
+    	//checking if there are multiple text style triggers in the message
+		int boldCount = 0;
+		int italicsCount = 0;
+		int underLineCount = 0;
+		
+		for(int i=0;i<message.length();i++) {
+			if(message.charAt(i)=='*') {
+				boldCount++;
+			}else if(message.charAt(i)=='~') {
+				italicsCount++;
+			}else if(message.charAt(i)=='_') {
+				underLineCount++;
+			}
+		}
+		
+		//pairs of triggers replaced with respective html tags
+		if(boldCount>=2) {
+			message = message+" ";
+			message = message.replace("*", "<b>");
+			message = message.replace("<b> ","</b> ");
+		}
+		if(italicsCount>=2) {
+			message = message+" ";
+			message = message.replace("~", "<i>");
+			message = message.replace("<i> ","</i> ");
+		}
+		if(underLineCount>=2) {
+			message = message+" ";
+			message = message.replace("_", "<u>");
+			message = message.replace("<u> ","</u> ");
+		}
+		
+		
+	//colors
+		int colorCount = 0;
+	    for(int i=0;i<message.length();i++) {
+				if(message.charAt(i)=='%') {
+					colorCount++;
+				}
+			}
+			
+			//pairs of color triggers replaced with appropriate html
+			if(colorCount%2==0) {
+				message = message+" ";
+				message = message.replace("% ", "</font> ");
+				
+				String[] words = message.split(" ");
+				message = "";
+				for(String word : words){
+		
+				    if(word.contains("%")){
+				        int trigger = word.indexOf('%');
+				        String color = word.substring(0,trigger);
+				        String colorStyle = "<font color="+color+">";
+				        String replace = word.substring(0,trigger+1);
+				        word = word.replace(replace,colorStyle);
+				    }
+				
+				message = message + word+" ";
+				}
+			}
+		
+	Payload payload = new Payload();
+	payload.setPayloadType(PayloadType.MESSAGE);
+	payload.setClientName(clientName);
+	payload.setMessage(message);
+
+	return sendPayload(payload);
     }
 
-    public boolean sendRoomsList(String[] rooms, String message) {
-        RoomResultPayload payload = new RoomResultPayload();
-        payload.setRooms(rooms);
-        if (message != null) {
-            payload.setMessage(message);
-        }
-        return send(payload);
+    protected boolean sendConnectionStatus(String clientName, boolean isConnect, String message) {
+	Payload payload = new Payload();
+	if (isConnect) {
+	    payload.setPayloadType(PayloadType.CONNECT);
+	    payload.setMessage(message);
+	}
+	else {
+	    payload.setPayloadType(PayloadType.DISCONNECT);
+	    payload.setMessage(message);
+	}
+	payload.setClientName(clientName);
+	return sendPayload(payload);
     }
 
-    public boolean sendExistingClient(long clientId, String clientName) {
-        Payload p = new Payload();
-        p.setPayloadType(PayloadType.SYNC_CLIENT);
-        p.setClientId(clientId);
-        p.setClientName(clientName);
-        return send(p);
+	protected boolean sendClearList() {
+		Payload payload = new Payload();
+		payload.setPayloadType(PayloadType.CLEAR_PLAYERS);
+		return sendPayload(payload);
+	}
+    
+    protected boolean sendRoom(String room) {
+	Payload payload = new Payload();
+	// using same payload type as a response trigger
+	payload.setPayloadType(PayloadType.GET_ROOMS);
+	payload.setMessage(room);
+	return sendPayload(payload);
     }
 
-    public boolean sendResetUserList() {
-        Payload p = new Payload();
-        p.setPayloadType(PayloadType.RESET_USER_LIST);
-        return send(p);
+    private boolean sendPayload(Payload p) {
+	try {
+	    out.writeObject(p);
+	    return true;
+	}
+	catch (IOException e) {
+	    log.log(Level.INFO, "Error sending message to client (most likely disconnected)");
+	    e.printStackTrace();
+	    cleanup();
+	    return false;
+	}
     }
 
-    public boolean sendClientId(long id) {
-        Payload p = new Payload();
-        p.setPayloadType(PayloadType.CLIENT_ID);
-        p.setClientId(id);
-        return send(p);
+    /***
+     * Process payloads we receive from our client
+     * 
+     * @param p
+     */
+    private void processPayload(Payload p) {
+	switch (p.getPayloadType()) {
+	case CONNECT:
+	    // here we'll fetch a clientName from our client
+	    String n = p.getClientName();
+	    if (n != null) {
+		clientName = n;
+		log.log(Level.INFO, "Set our name to " + clientName);
+		if (currentRoom != null) {
+		    currentRoom.joinLobby(this);
+		}
+	    }
+	    break;
+	case DISCONNECT:
+	    isRunning = false;// this will break the while loop in run() and clean everything up
+	    break;
+	case MESSAGE:
+	    currentRoom.sendMessage(this, p.getMessage());
+	    break;
+	case GET_ROOMS:
+	    // far from efficient but it works for example sake
+	    List<String> roomNames = currentRoom.getRooms();
+	    Iterator<String> iter = roomNames.iterator();
+	    while (iter.hasNext()) {
+		String room = iter.next();
+		if (room != null && !room.equalsIgnoreCase(currentRoom.getName())) {
+		    if (!sendRoom(room)) {
+			// if an error occurs stop spamming
+			break;
+		    }
+		}
+	    }
+	    break;
+	case JOIN_ROOM:
+	    currentRoom.joinRoom(p.getMessage(), this);
+	    break;
+	default:
+	    log.log(Level.INFO, "Unhandled payload on server: " + p);
+	    break;
+	}
     }
 
-    public boolean sendMessage(long clientId, String message) {
-        Payload p = new Payload();
-        p.setPayloadType(PayloadType.MESSAGE);
-        p.setClientId(clientId);
-        p.setMessage(message);
-        return send(p);
-    }
-
-    public boolean sendConnectionStatus(long clientId, String who, boolean isConnected) {
-        Payload p = new Payload();
-        p.setPayloadType(isConnected ? PayloadType.CONNECT : PayloadType.DISCONNECT);
-        p.setClientId(clientId);
-        p.setClientName(who);
-        p.setMessage(String.format("%s the room %s", (isConnected ? "Joined" : "Left"), currentRoom.getName()));
-        return send(p);
-    }
-
-    private boolean send(Payload payload) {
-        try {
-            logger.log(Level.FINE, "Outgoing payload: " + payload);
-            out.writeObject(payload);
-            logger.log(Level.INFO, "Sent payload: " + payload);
-            return true;
-        } catch (IOException e) {
-            logger.info("Error sending message to client (most likely disconnected)");
-            // uncomment this to inspect the stack trace
-            // e.printStackTrace();
-            cleanup();
-            return false;
-        } catch (NullPointerException ne) {
-            logger.info("Message was attempted to be sent before outbound stream was opened: " + payload);
-            // uncomment this to inspect the stack trace
-            // e.printStackTrace();
-            return true;// true since it's likely pending being opened
-        }
-    }
-
-    // end send methods
     @Override
     public void run() {
-        try (ObjectOutputStream out = new ObjectOutputStream(client.getOutputStream());
-                ObjectInputStream in = new ObjectInputStream(client.getInputStream());) {
-            this.out = out;
-            isRunning = true;
-            Payload fromClient;
-            while (isRunning && // flag to let us easily control the loop
-                    (fromClient = (Payload) in.readObject()) != null // reads an object from inputStream (null would
-                                                                     // likely mean a disconnect)
-            ) {
-
-                logger.info("Received from client: " + fromClient);
-                processPayload(fromClient);
-
-            } // close while loop
-        } catch (Exception e) {
-            // happens when client disconnects
-            e.printStackTrace();
-            logger.info("Client disconnected");
-        } finally {
-            isRunning = false;
-            logger.info("Exited thread loop. Cleaning up connection");
-            cleanup();
-        }
-    }
-
-    void processPayload(Payload p) {
-        switch (p.getPayloadType()) {
-            case CONNECT:
-                setClientName(p.getClientName());
-                break;
-            case DISCONNECT:
-                Room.disconnectClient(this, getCurrentRoom());
-                break;
-            case MESSAGE:
-                if (currentRoom != null) {
-                    currentRoom.sendMessage(this, p.getMessage());
-                } else {
-                    // TODO migrate to lobby
-                    logger.log(Level.INFO, "Migrating to lobby on message with null room");
-                    Room.joinRoom(Constants.LOBBY, this);
-                }
-                break;
-            case GET_ROOMS:
-                Room.getRooms(p.getMessage().trim(), this);
-                break;
-            case CREATE_ROOM:
-                Room.createRoom(p.getMessage().trim(), this);
-                break;
-            case JOIN_ROOM:
-                Room.joinRoom(p.getMessage().trim(), this);
-                break;
-            case READY:
-                // ((GameRoom) currentRoom).setReady(myClientId);
-                break;
-            default:
-                break;
-
-        }
-
+	try {
+	    isRunning = true;
+	    Payload fromClient;
+	    while (isRunning && // flag to let us easily control the loop
+		    !client.isClosed() // breaks the loop if our connection closes
+		    && (fromClient = (Payload) in.readObject()) != null // reads an object from inputStream (null would
+									// likely mean a disconnect)
+	    ) {
+		System.out.println("Received from client: " + fromClient);
+		processPayload(fromClient);
+	    } // close while loop
+	}
+	catch (Exception e) {
+	    // happens when client disconnects
+	    e.printStackTrace();
+	    log.log(Level.INFO, "Client Disconnected");
+	}
+	finally {
+	    isRunning = false;
+	    log.log(Level.INFO, "Cleaning up connection for ServerThread");
+	    cleanup();
+	}
     }
 
     private void cleanup() {
-        logger.info("Thread cleanup() start");
-        try {
-            client.close();
-        } catch (IOException e) {
-            logger.info("Client already closed");
-        }
-        logger.info("Thread cleanup() complete");
+	if (currentRoom != null) {
+	    log.log(Level.INFO, getName() + " removing self from room " + currentRoom.getName());
+	    currentRoom.removeClient(this);
+	}
+	if (in != null) {
+	    try {
+		in.close();
+	    }
+	    catch (IOException e) {
+		log.log(Level.INFO, "Input already closed");
+	    }
+	}
+	if (out != null) {
+	    try {
+		out.close();
+	    }
+	    catch (IOException e) {
+		log.log(Level.INFO, "Client already closed");
+	    }
+	}
+	if (client != null && !client.isClosed()) {
+	    try {
+		client.shutdownInput();
+	    }
+	    catch (IOException e) {
+		log.log(Level.INFO, "Socket/Input already closed");
+	    }
+	    try {
+		client.shutdownOutput();
+	    }
+	    catch (IOException e) {
+		log.log(Level.INFO, "Socket/Output already closed");
+	    }
+	    try {
+		client.close();
+	    }
+	    catch (IOException e) {
+		log.log(Level.INFO, "Client already closed");
+	    }
+	}
+    }
+
+    public boolean isRunning() {
+        return false;
+    }
+
+    public void setClientId(long nextClientId) {
+    }
+
+    public void sendClientId(long nextClientId) {
     }
 }
