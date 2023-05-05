@@ -16,7 +16,7 @@ public class Room implements AutoCloseable {
     private final static String COMMAND_TRIGGER = "/";
     private final static String CREATE_ROOM = "createroom";
     private final static String JOIN_ROOM = "joinroom";
-    private final static String ROLL= "roll";
+    private final static String ROLL= "roll";//mmd23 31431631
     private final static String FLIP = "flip";
     private final static String PM = "@";
     private final static String MUTE = "mute";
@@ -133,7 +133,7 @@ public class Room implements AutoCloseable {
 			String rollMsg = "<b style=color:orange>rolled a "+Integer.toString(roll)+" (0-100)</b>";
 			sendMessage(client,rollMsg);
 			wasCommand = true;
-			break;
+			break;//mmd23 31431631
 		case FLIP:
 			int flip = (int)((Math.random()*(2))+1);
 			String flipMsg = "<b style=color:green>got heads on the coin toss</b>";
@@ -151,7 +151,7 @@ public class Room implements AutoCloseable {
 			
 			//sends a message to the muted user and the client that muted them
 			Iterator<ServerThread> iter = clients.iterator();
-			while (iter.hasNext()) {
+			while (iter.hasNext()) {//mmd23 31431631 5/5/23
 				ServerThread c = iter.next();
 				if (c.getClientName().equals(mutedClient)||c.getClientName().equals(client.getClientName())) {
 					c.send(client.getClientName()," <i>muted "+mutedClient+"</i>");
