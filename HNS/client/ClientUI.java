@@ -194,7 +194,7 @@ public class ClientUI extends JFrame implements Event {
 	panel.add(input, BorderLayout.SOUTH);
 	this.add(panel, "lobby");
 	
-	JButton exportChat = new JButton("Export");
+	JButton exportChat = new JButton("Export");//mmd23 31431631 5/5/2023
 	exportChat.addActionListener(new ActionListener() {
 
 		@Override
